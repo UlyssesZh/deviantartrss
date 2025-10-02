@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
     environment:
       RACK_ENV: production
-    port:
+    ports:
       - '80:4567'
 ```
 

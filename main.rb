@@ -21,8 +21,19 @@ get '/:name' do
 
 	name = at['//channel/item[1]/media:credit[1]'].content
 	at['//channel/title'].content = name
-	icon = at['//channel/item[1]/media:credit[2]'].content
-	at['//channel/atom:icon'].content = icon
+
+	icon_url = at['//channel/item[1]/media:credit[2]'].content
+	icon_url['/avatars/'] = '/avatars-big/'
+	icon = at['//channel/atom:icon']
+	icon.content = icon_url
+	site_image = Nokogiri::XML::Node.new 'image', doc
+	site_image.add_child Nokogiri::XML::Node.new('title', doc).tap { it.content = name }
+	site_image.add_child Nokogiri::XML::Node.new('url', doc).tap { it.content = icon_url }
+	site_image.add_child Nokogiri::XML::Node.new('link', doc).tap { it.content = "https://deviantart.com/#{name}" }
+	site_image.add_child Nokogiri::XML::Node.new('width', doc).tap { it.content = '50' }
+	site_image.add_child Nokogiri::XML::Node.new('height', doc).tap { it.content = '50' }
+	icon.add_next_sibling site_image
+
 	at['//channel/link'].content = "https://deviantart.com/#{name}"
 	doc.xpath('//channel/atom:link', namespaces).remove
 
