@@ -57,5 +57,6 @@ get '/:name' do
 		desc.content = content_doc.root.children.map(&:to_xml).join
 	end
 
+	content_type 'text/xml;charset=utf-8'
 	doc.to_xml
 end
