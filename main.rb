@@ -2,11 +2,56 @@
 
 require 'net/http'
 require 'cgi'
+require 'fileutils'
+require 'json'
 
 require 'sinatra'
 require 'nokogiri'
+require 'sqlite3'
+
+BASE_URL = ENV.fetch 'DEVIANTARTRSS_BASE_URL', 'http://localhost:4567'
+COOKIES = ENV.fetch 'DEVIANTARTRSS_COOKIES', nil
+
+db_path = File.expand_path ENV.fetch 'DEVIANTARTRSS_DB', 'data.db'
+FileUtils.mkdir_p File.dirname db_path
+DB = SQLite3::Database.new db_path
+DB.execute <<-SQL
+	create table if not exists image_link_cache (
+		permalink text primary key,
+		image_link text,
+		created_at integer
+	);
+SQL
+
+IMAGE_LINK_CACHE_EXPIRE = (ENV.fetch 'DEVIANTARTRSS_IMAGE_LINK_CACHE_EXPIRE', 15*86400).to_i
+def image_link permalink
+	now = Time.now.to_i
+	image_link, created_at = DB.get_first_row 'select image_link, created_at from image_link_cache where permalink = ?', permalink
+	image_link = nil if created_at && now - created_at >= IMAGE_LINK_CACHE_EXPIRE
+	return image_link if image_link
+	begin
+		oembed = JSON.parse Net::HTTP.get URI("https://backend.deviantart.com/oembed?url=#{URI.encode_uri_component permalink}"), 'Cookie' => COOKIES
+	rescue => e
+		$stderr.puts e.full_message
+		return
+	end
+	image_link = oembed['url']
+	image_link = nil if image_link&.[] /,blur_\d+/
+	DB.execute 'insert into image_link_cache values (?, ?, ?)', [permalink, image_link, now]
+	image_link
+end
+
+def proxy_image name, art
+	image_url = image_link "https://www.deviantart.com/#{name}/art/#{art}"
+	return halt 204, 'Current user cannot view this image' unless image_url
+	response = Net::HTTP.get_response URI image_url
+	content_type response.content_type
+	response.body
+end
 
 get '/:name' do
+	return proxy_image params['name'], params['art'] if params['art']
+
 	xml = ->text { Nokogiri::XML text rescue halt 500, "Error processing XML: #{$!.message}"}
 
 	name = params['name']
@@ -40,8 +85,17 @@ get '/:name' do
 	doc.xpath('//channel/item', namespaces).each do |item|
 		next item.remove unless image = item.at_xpath('media:content[@medium="image"]', namespaces)
 		next item.remove unless image_url = image['url']
-		next item.remove if image_url[/,blur_\d+/]
 		next item.remove unless desc = item.at_xpath('description', namespaces)
+
+		# starting from Nov 2025, adult contents are blurred as well
+		if image_url[/,blur_\d+/]
+			# deviants meeting this condition seem to be behind paywall
+			next item.remove if item.xpath('media:thumbnail', namespaces).map { it['url'][/,blur_(\d+)/, 1].to_i }.min == 30
+		end
+
+		permalink = item.at_xpath('link', namespaces).content
+		image_url = "#{BASE_URL}/#{params['name']}?art=#{permalink[%r{/([^/]+)$}, 1]}"
+		image['url'] = image_url
 
 		item.xpath('media:thumbnail', namespaces).remove
 		image.remove_attribute 'medium'

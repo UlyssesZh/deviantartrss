@@ -29,11 +29,15 @@ services:
     restart: unless-stopped
     environment:
       RACK_ENV: production
+      DEVIANTARTRSS_COOKIES: userinfo=xxx; td=xxx; auth=xxx; auth_secure=xxx
+      DEVIANTARTRSS_BASE_URL: https://deviantartrss.mydomain
     ports:
       - '80:4567'
 ```
 
 Change `80` to the port on which you want it to be hosted.
+
+The cookies are necessary to view adult images.
 
 ## Usage
 

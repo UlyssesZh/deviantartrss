@@ -1,2 +1,5 @@
 README.md
 .github
+.gitignore
+data.db
+.env
