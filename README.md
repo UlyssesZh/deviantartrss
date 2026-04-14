@@ -33,6 +33,8 @@ services:
       DEVIANTARTRSS_BASE_URL: https://deviantartrss.mydomain
     ports:
       - '80:4567'
+    volumes:
+      - ./data:/data
 ```
 
 Change `80` to the port on which you want it to be hosted.

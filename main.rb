@@ -37,6 +37,7 @@ def image_link permalink
 	end
 	image_link = oembed['url']
 	image_link = nil if image_link&.[] /,blur_\d+/
+	DB.execute 'delete from image_link_cache where permalink = ?', permalink if created_at
 	DB.execute 'insert into image_link_cache values (?, ?, ?)', [permalink, image_link, now]
 	image_link
 end
@@ -44,9 +45,7 @@ end
 def proxy_image name, art
 	image_url = image_link "https://www.deviantart.com/#{name}/art/#{art}"
 	return halt 204, 'Current user cannot view this image' unless image_url
-	response = Net::HTTP.get_response URI image_url
-	content_type response.content_type
-	response.body
+	redirect image_url, 307
 end
 
 get '/:name' do
