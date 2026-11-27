@@ -8,9 +8,12 @@ require 'tempfile'
 # requests are serialized because Mechanize and its cookie jar are mutable.
 class DeviantArtSession
 	class AuthenticationError < StandardError; end
+	class GalleryError < StandardError; end
+	class UserNotFound < GalleryError; end
 
 	ORIGIN = 'https://www.deviantart.com'
 	OEMBED = 'https://backend.deviantart.com/oembed'
+	GALLERY = 'https://www.deviantart.com/_puppy/dashared/gallection/contents'
 	RENEW_AFTER = 12 * 3600
 	RETRY_AFTER = 60
 	USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -24,15 +27,7 @@ class DeviantArtSession
 
 	def image_link permalink
 		@mutex.synchronize do
-			if authentication_configured?
-				unless @cookie_jar_loaded
-					load_cookie_jar!
-					@cookie_jar_loaded = true
-				end
-				login! unless authenticated?
-			else
-				@agent ||= build_agent
-			end
+			prepare_agent!
 			renewed = false
 			begin
 				data = oembed permalink
@@ -59,7 +54,63 @@ class DeviantArtSession
 		end
 	end
 
+	def gallery name
+		@mutex.synchronize do
+			begin
+				prepare_agent!
+				agent = @agent
+			rescue AuthenticationError => error
+				warn "Using anonymous gallery access: #{error.message}"
+				agent = @public_agent ||= build_agent
+			end
+			unless @gallery_agent.equal?(agent) && @gallery_csrf_token
+				page = agent.get "#{ORIGIN}/"
+				token = page.body[/window\.__CSRF_TOKEN__\s*=\s*(['"])([^'"]+)\1/, 2]
+				raise GalleryError, 'DeviantArt did not return a gallery session token.' unless page.code == '200' && token
+
+				@gallery_agent, @gallery_csrf_token = agent, token
+			end
+			query = URI.encode_www_form username: name, type: 'gallery', all_folder: true,
+				offset: 0, limit: 60, csrf_token: @gallery_csrf_token
+			response = agent.get "#{GALLERY}?#{query}"
+			begin
+				save_cookie_jar! if agent.equal? @agent
+			rescue AuthenticationError => error
+				warn error.message
+			end
+			data = JSON.parse response.body
+			unless data.is_a?(Hash) && data['results'].is_a?(Array) && data['gallection'].is_a?(Hash)
+				raise GalleryError, 'DeviantArt did not return the expected gallery data.'
+			end
+			data
+		end
+	rescue JSON::ParserError
+		raise GalleryError, 'DeviantArt returned an invalid gallery response.'
+	rescue Mechanize::ResponseCodeError => error
+		if [400, 404].include? error.response_code.to_i
+			begin
+				payload = JSON.parse error.page.body
+			rescue JSON::ParserError
+				payload = nil
+			end
+			raise UserNotFound, 'DeviantArt user not found.' if payload.is_a?(Hash) && payload['errorCode'] == 404
+		end
+		raise
+	end
+
 	private
+
+	def prepare_agent!
+		if authentication_configured?
+			unless @cookie_jar_loaded
+				load_cookie_jar!
+				@cookie_jar_loaded = true
+			end
+			login! unless authenticated?
+		else
+			@agent ||= build_agent
+		end
+	end
 
 	def authentication_configured?
 		!@username.to_s.empty? && !@password.to_s.empty?

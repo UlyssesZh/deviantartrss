@@ -10,6 +10,8 @@ require 'nokogiri'
 require 'sqlite3'
 
 require_relative 'lib/session'
+require_relative 'lib/feed_cache'
+require_relative 'lib/gallery_feed'
 
 cookie_jar_path = File.expand_path ENV.fetch 'DEVIANTARTRSS_COOKIE_JAR', 'cookies.txt'
 DEVIANTART = DeviantArtSession.new(ENV['DEVIANTARTRSS_USERNAME'], ENV['DEVIANTARTRSS_PASSWORD'], ENV['DEVIANTARTRSS_TOTP_KEY'], cookie_jar_path:)
@@ -24,6 +26,8 @@ DB.execute <<-SQL
 		created_at integer
 	);
 SQL
+
+FEEDS = DeviantArtFeedCache.new DB, DeviantArtGalleryFeed.new(DEVIANTART)
 
 IMAGE_LINK_CACHE_EXPIRE = (ENV.fetch 'DEVIANTARTRSS_IMAGE_LINK_CACHE_EXPIRE', 15*86400).to_i
 def image_link permalink
@@ -58,8 +62,13 @@ get '/:name' do
 	xml = ->text { Nokogiri::XML text rescue halt 500, "Error processing XML: #{$!.message}"}
 
 	name = params['name']
-	url = "https://backend.deviantart.com/rss.xml?type=deviation&q=by%3A#{name}+sort%3Atime+meta%3Aall"
-	doc = xml[Net::HTTP.get URI url]
+	begin
+		feed = FEEDS.fetch name
+	rescue DeviantArtFeedCache::Unavailable => error
+		headers 'Retry-After' => error.retry_after.to_s
+		halt 503, error.message
+	end
+	doc = xml[feed]
 	namespaces = doc.collect_namespaces.transform_keys { it[/^xmlns:(.*)/, 1] }
 	at = ->xpath { doc.at_xpath(xpath, namespaces) || halt(500, "Cannot find #{xpath}") }
 
@@ -67,11 +76,11 @@ get '/:name' do
 	halt 204 if description.content == 'Error generating RSS.'
 	halt 404, 'No user found' if description.content == "Error generating RSS for by:#{name}"
 
-	name = at['//channel/item[1]/media:credit[1]'].content
+	name = doc.at_xpath('//channel/item[1]/media:credit[1]', namespaces)&.content || at['//channel/title'].content
 	at['//channel/title'].content = name
 
-	icon_url = at['//channel/item[1]/media:credit[2]'].content
-	icon_url['/avatars/'] = '/avatars-big/'
+	icon_url = doc.at_xpath('//channel/item[1]/media:credit[2]', namespaces)&.content || at['//channel/atom:icon'].content
+	icon_url = icon_url.sub '/avatars/', '/avatars-big/'
 	icon = at['//channel/atom:icon']
 	icon.content = icon_url
 	site_image = Nokogiri::XML::Node.new 'image', doc

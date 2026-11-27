@@ -4,7 +4,13 @@ A very simple HTTP server to provide RSS feed for user galleries on DeviantArt.
 
 ## Features
 
-Advantages compared to the [official RSS API](https://www.deviantart.com/developers/rss) of DeviantArt:
+Uses DeviantArt's website gallery endpoint to generate RSS locally, without requesting the official RSS API.
+Each feed contains up to 60 recent gallery entries,
+filtered to accessible images, with titles, images, publication dates, and artwork
+links.
+Artist-written descriptions are not included.
+
+Features:
 
 - Better title and icon.
 - Use large image for thumbnail.
