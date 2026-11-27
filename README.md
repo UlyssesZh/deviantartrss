@@ -14,6 +14,20 @@ Advantages compared to the [official RSS API](https://www.deviantart.com/develop
 
 On bare metal:
 
+Set `DEVIANTARTRSS_USERNAME` and `DEVIANTARTRSS_PASSWORD` in the server environment.
+If the account has two-factor authentication enabled,
+also set `DEVIANTARTRSS_TOTP_KEY` to its Base32 authenticator secret.
+Enable mature browsing in the account's DeviantArt settings if you want to view adult images.
+For example:
+
+```shell
+DEVIANTARTRSS_USERNAME=your-username
+DEVIANTARTRSS_PASSWORD=your-password
+DEVIANTARTRSS_TOTP_KEY=your-base32-authenticator-secret
+```
+
+Then run:
+
 ```shell
 bundle install
 RACK_ENV=production PORT=80 bundle exec ./main.rb
@@ -29,8 +43,9 @@ services:
     restart: unless-stopped
     environment:
       RACK_ENV: production
-      DEVIANTARTRSS_COOKIES: userinfo=xxx; td=xxx; auth=xxx; auth_secure=xxx
-      DEVIANTARTRSS_BASE_URL: https://deviantartrss.mydomain
+      DEVIANTARTRSS_USERNAME: your-username
+      DEVIANTARTRSS_PASSWORD: your-password
+      DEVIANTARTRSS_TOTP_KEY: your-base32-authenticator-secret
     ports:
       - '80:4567'
     volumes:
@@ -38,8 +53,6 @@ services:
 ```
 
 Change `80` to the port on which you want it to be hosted.
-
-The cookies are necessary to view adult images.
 
 ## Usage
 

@@ -9,8 +9,9 @@ require 'sinatra'
 require 'nokogiri'
 require 'sqlite3'
 
-BASE_URL = ENV.fetch 'DEVIANTARTRSS_BASE_URL', 'http://localhost:4567'
-COOKIES = ENV.fetch 'DEVIANTARTRSS_COOKIES', nil
+require_relative 'lib/session'
+
+DEVIANTART = DeviantArtSession.new ENV['DEVIANTARTRSS_USERNAME'], ENV['DEVIANTARTRSS_PASSWORD'], ENV['DEVIANTARTRSS_TOTP_KEY']
 
 db_path = File.expand_path ENV.fetch 'DEVIANTARTRSS_DB', 'data.db'
 FileUtils.mkdir_p File.dirname db_path
@@ -30,12 +31,14 @@ def image_link permalink
 	image_link = nil if created_at && now - created_at >= IMAGE_LINK_CACHE_EXPIRE
 	return image_link if image_link
 	begin
-		oembed = JSON.parse Net::HTTP.get URI("https://backend.deviantart.com/oembed?url=#{URI.encode_uri_component permalink}"), 'Cookie' => COOKIES
+		image_link = DEVIANTART.image_link permalink
+	rescue DeviantArtSession::AuthenticationError => e
+		$stderr.puts e.message
+		halt 503, 'DeviantArt authentication is unavailable'
 	rescue => e
-		$stderr.puts e.full_message
+		$stderr.puts "DeviantArt image request failed (#{e.class})"
 		return
 	end
-	image_link = oembed['url']
 	image_link = nil if image_link&.[] /,blur_\d+/
 	DB.execute 'delete from image_link_cache where permalink = ?', permalink if created_at
 	DB.execute 'insert into image_link_cache values (?, ?, ?)', [permalink, image_link, now]
@@ -93,7 +96,7 @@ get '/:name' do
 		end
 
 		permalink = item.at_xpath('link', namespaces).content
-		image_url = "#{BASE_URL}/#{params['name']}?art=#{permalink[%r{/([^/]+)$}, 1]}"
+		image_url = "#{request.base_url}/#{params['name']}?art=#{permalink[%r{/([^/]+)$}, 1]}"
 		image['url'] = image_url
 
 		item.xpath('media:thumbnail', namespaces).remove
