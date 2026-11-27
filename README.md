@@ -9,6 +9,7 @@ Advantages compared to the [official RSS API](https://www.deviantart.com/develop
 - Better title and icon.
 - Use large image for thumbnail.
 - Filter blurred images (images behind paywall).
+- Unblur adult images.
 
 ## Deploy
 
@@ -42,7 +43,6 @@ services:
     container_name: deviantartrss
     restart: unless-stopped
     environment:
-      RACK_ENV: production
       DEVIANTARTRSS_USERNAME: your-username
       DEVIANTARTRSS_PASSWORD: your-password
       DEVIANTARTRSS_TOTP_KEY: your-base32-authenticator-secret
