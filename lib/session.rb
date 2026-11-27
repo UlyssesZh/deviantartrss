@@ -24,16 +24,20 @@ class DeviantArtSession
 
 	def image_link permalink
 		@mutex.synchronize do
-			unless @cookie_jar_loaded
-				load_cookie_jar!
-				@cookie_jar_loaded = true
+			if authentication_configured?
+				unless @cookie_jar_loaded
+					load_cookie_jar!
+					@cookie_jar_loaded = true
+				end
+				login! unless authenticated?
+			else
+				@agent ||= build_agent
 			end
-			login! unless authenticated?
 			renewed = false
 			begin
 				data = oembed permalink
 			rescue Mechanize::ResponseCodeError => error
-				raise unless [401, 403].include?(error.response_code.to_i)
+				raise unless authentication_configured? && [401, 403].include?(error.response_code.to_i)
 
 				# Invalidated cookies need renewing even when their expiry is in the future.
 				@agent = nil
@@ -45,7 +49,7 @@ class DeviantArtSession
 			end
 
 			url = data['url']
-			if url&.match?(/,blur_\d+/) && Time.now.to_i - @authenticated_at >= RETRY_AFTER
+			if authentication_configured? && url&.match?(/,blur_\d+/) && Time.now.to_i - @authenticated_at >= RETRY_AFTER
 				# oEmbed can return a blurred image with HTTP 200 for expired sessions.
 				# Throttle renewal so paywalled images cannot cause a login storm.
 				login!
@@ -56,6 +60,10 @@ class DeviantArtSession
 	end
 
 	private
+
+	def authentication_configured?
+		!@username.to_s.empty? && !@password.to_s.empty?
+	end
 
 	def load_cookie_jar!
 		return unless @cookie_jar_path
@@ -85,7 +93,7 @@ class DeviantArtSession
 	end
 
 	def save_cookie_jar!
-		return unless @cookie_jar_path
+		return unless @cookie_jar_path && @authenticated_at
 
 		directory = File.dirname @cookie_jar_path
 		FileUtils.mkdir_p directory

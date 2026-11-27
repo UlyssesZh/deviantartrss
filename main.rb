@@ -12,7 +12,6 @@ require 'sqlite3'
 require_relative 'lib/session'
 
 cookie_jar_path = File.expand_path ENV.fetch 'DEVIANTARTRSS_COOKIE_JAR', 'cookies.txt'
-FileUtils.mkdir_p File.dirname cookie_jar_path
 DEVIANTART = DeviantArtSession.new(ENV['DEVIANTARTRSS_USERNAME'], ENV['DEVIANTARTRSS_PASSWORD'], ENV['DEVIANTARTRSS_TOTP_KEY'], cookie_jar_path:)
 
 db_path = File.expand_path ENV.fetch 'DEVIANTARTRSS_DB', 'data.db'
